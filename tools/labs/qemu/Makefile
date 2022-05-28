@@ -9,11 +9,12 @@ KCONFIG = $(KDIR)/.config
 NTTCP = $(KDIR)/tools/labs/templates/assignments/6-e100/nttcp
 
 YOCTO_URL = http://downloads.yoctoproject.org/releases/yocto/yocto-2.3/machines/qemu/qemu$(ARCH)/
-YOCTO_IMAGE = core-image-minimal-qemu$(ARCH).ext4
+#YOCTO_IMAGE = core-image-minimal-qemu$(ARCH).ext4
 #YOCTO_IMAGE = core-image-minimal-dev-qemu$(ARCH).ext4
 #YOCTO_IMAGE = core-image-sato-dev-qemu$(ARCH).ext4
-#YOCTO_IMAGE = core-image-sato-qemu$(ARCH).ext4
+YOCTO_IMAGE = core-image-sato-qemu$(ARCH).ext4
 #YOCTO_IMAGE = core-image-sato-sdk-qemu$(ARCH).ext4
+#YOCTO_IMAGE = burak-core-image-minimal-qemux86.rootfs.ext4
 
 QEMU_OPTS = -kernel $(ZIMAGE) \
 	-device virtio-serial \
@@ -24,8 +25,9 @@ QEMU_OPTS = -kernel $(ZIMAGE) \
 	-drive file=$(YOCTO_IMAGE),if=virtio,format=raw \
 	-drive file=disk1.img,if=virtio,format=raw \
 	-drive file=disk2.img,if=virtio,format=raw \
+	-drive file=mydisk.img,if=virtio,format=raw \
 	--append "root=/dev/vda loglevel=15 console=hvc0" \
-	--display $(QEMU_DISPLAY) -s -m 256
+	--display $(QEMU_DISPLAY) -s -m 512
 
 ifdef ENABLE_KVM
 QEMU_OPTS += -enable-kvm -cpu host

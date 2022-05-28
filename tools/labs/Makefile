@@ -31,6 +31,18 @@ copy: $(YOCTO_IMAGE)
 	sudo umount $(TEMPDIR)
 	rmdir $(TEMPDIR)
 
+copy-scp:
+	ssh root@172.213.0.18 "rm -rf skels*"
+	ssh root@172.213.0.18 "rm -rf templates*"
+	tar -cvf templates.tar templates > /dev/null 2>&1
+	tar -cvf skels.tar skels > /dev/null 2>&1
+	scp templates.tar root@172.213.0.18:/home/root
+	scp skels.tar root@172.213.0.18:/home/root
+	ssh root@172.213.0.18 "tar -xvf skels.tar" > /dev/null 2>&1
+	ssh root@172.213.0.18 "tar -xvf templates.tar" > /dev/null 2>&1
+	ssh root@172.213.0.18 "rm -rf skels.tar"
+	ssh root@172.213.0.18 "rm -rf templates.tar"
+
 docker-docs:
 	cd docker && docker-compose build docs-build
 	cd docker && docker-compose up -d docs-build

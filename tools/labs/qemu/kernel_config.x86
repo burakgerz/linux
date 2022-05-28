@@ -97,3 +97,8 @@ CONFIG_UPROBE_EVENTS=y
 CONFIG_LOCKDEP=y
 # kernel lock tracing:
 CONFIG_LOCK_STAT=y
+
+# btrfs support
+CONFIG_BTRFS_FS=y
+CONFIG_LOCK_STAT=y
+
