@@ -1,0 +1,8 @@
+# TODO: add flags to generate debug information
+ccflags-y = -Wno-unused-function -Wno-unused-label
+EXTRA_CFLAGS = -Wall -g -DDEBUG
+CFLAGS = -g
+
+# debug symbols are somehow not included used when compiling....
+
+obj-m = oops_mod.o
