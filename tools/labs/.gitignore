@@ -1,4 +1,4 @@
-/skels/
+/skels/Kbuild
 vmlinux
 zImage
 serial.pts
