@@ -118,8 +118,8 @@ static ssize_t so2_cdev_write(struct file *file, const char __user *user_buffer,
 		(struct so2_device_data *)file->private_data;
 
 	/* TODO 5: copy user_buffer to data->buffer, use copy_from_user */
-	if ((*offset + size) > BUFFER_SIZE)
-		size = BUFFER_SIZE - *offset;
+	if ((*offset + size) > BUFSIZ)
+		size = BUFSIZ - *offset;
 	else
 		size = size;
 
