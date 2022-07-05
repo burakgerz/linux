@@ -32,6 +32,8 @@ MODULE_LICENSE("GPL");
 #define BUFSIZ 4096
 #endif
 
+#define EXTRA
+
 dev_t so2_dev_t = MKDEV(MY_MAJOR, MY_MINOR);
 
 struct so2_device_data {
@@ -41,6 +43,8 @@ struct so2_device_data {
 	char buffer[BUFSIZ];
 	size_t buffer_size; // real buffer size
 	/* TODO 7: extra members for home */
+	wait_queue_head_t wq;
+	int flag;
 	/* TODO 3: add atomic_t access variable to keep track if file is opened */
 	atomic_t access;
 };
@@ -58,10 +62,11 @@ static int so2_cdev_open(struct inode *inode, struct file *file)
 	data = container_of(inode->i_cdev, struct so2_device_data, cdev);
 	file->private_data = data;
 
+#ifndef EXTRA
 	/* TODO 3: return immediately if access is != 0, use atomic_cmpxchg */
 	if (atomic_cmpxchg(&(data->access), 0, 1) != 0)
 		return -EBUSY;
-
+#endif
 	//set_current_state(TASK_INTERRUPTIBLE);
 	//schedule_timeout(10 * HZ);
 
@@ -77,7 +82,6 @@ static int so2_cdev_release(struct inode *inode, struct file *file)
 	pr_info("releasing...\n");
 
 #ifndef EXTRA
-
 	/* TODO 3: reset access variable to 0, use atomic_set */
 	atomic_set(&data->access, 0);
 #endif
@@ -94,6 +98,14 @@ static ssize_t so2_cdev_read(struct file *file, char __user *user_buffer,
 
 #ifdef EXTRA
 	/* TODO 7: extra tasks for home */
+	if (data->buffer_size == 0) {
+		if (file->f_flags & O_NONBLOCK) {
+			pr_info("-EWOULDBLOCK...\n");
+			return -EWOULDBLOCK;
+		} else
+			wait_event_interruptible(data->wq,
+						 data->buffer_size != 0);
+	}
 #endif
 
 	/* TODO 4: Copy data->buffer to user_buffer, use copy_to_user */
@@ -129,6 +141,7 @@ static ssize_t so2_cdev_write(struct file *file, const char __user *user_buffer,
 	data->buffer_size = *offset;
 
 	/* TODO 7: extra tasks for home */
+	wake_up_interruptible(&data->wq);
 
 	return size;
 }
@@ -157,6 +170,15 @@ static long so2_cdev_ioctl(struct file *file, unsigned int cmd,
 				 BUFFER_SIZE))
 			return -EFAULT;
 		break;
+	case MY_IOCTL_DOWN:
+		data->flag = 0;
+		ret = wait_event_interruptible(data->wq, data->flag != 0);
+		break;
+	case MY_IOCTL_UP:
+		data->flag = 1;
+		wake_up_interruptible(&data->wq);
+		break;
+
 	default:
 		ret = -EINVAL;
 	}
@@ -191,6 +213,8 @@ static int so2_cdev_init(void)
 	for (i = 0; i < NUM_MINORS; i++) {
 #ifdef EXTRA
 		/* TODO 7: extra tasks, for home */
+		devs[i].buffer_size = 0;
+		memset(devs[i].buffer, 0, sizeof(devs[i].buffer));
 #else
 		/*TODO 4: initialize buffer with MESSAGE string */
 		strncpy((devs[i].buffer), MESSAGE, BUFSIZ);
@@ -198,6 +222,8 @@ static int so2_cdev_init(void)
 			MESSAGE); // maybe strlen(devs[i].buffer) is also ok
 #endif
 		/* TODO 7: extra tasks for home */
+		init_waitqueue_head(&(devs[i].wq));
+		devs[i].flag = 0;
 		/* TODO 3: set access variable to 0, use atomic_set */
 		atomic_set(&(devs[i].access), 0);
 		/* TODO 2: init and add cdev to kernel core */
