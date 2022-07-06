@@ -5,6 +5,7 @@
 #include <linux/interrupt.h>
 #include <linux/ioport.h>
 #include <linux/kernel.h>
+#include <linux/kfifo.h>
 #include <linux/module.h>
 #include <linux/spinlock.h>
 #include <linux/uaccess.h>
@@ -26,11 +27,14 @@ MODULE_LICENSE("GPL");
 #define BUFFER_SIZE 1024
 #define SCANCODE_RELEASED_MASK 0x80
 
+#define USE_KFIFO
+
 struct kbd {
 	struct cdev cdev;
 	/* TODO 3: add spinlock */
 	spinlock_t lock;
 	char buf[BUFFER_SIZE];
+	struct kfifo kfifo;
 	size_t put_idx, get_idx, count;
 } devs[1];
 
@@ -75,13 +79,18 @@ static void put_char(struct kbd *data, char c)
 	if (data->count >= BUFFER_SIZE)
 		return;
 
+#ifndef USE_KFIFO
 	data->buf[data->put_idx] = c;
 	data->put_idx = (data->put_idx + 1) % BUFFER_SIZE; // Circular buffer!
 	data->count++;
+#else
+	kfifo_put(&devs[0].kfifo, c);
+#endif
 }
 
 static bool get_char(char *c, struct kbd *data)
 {
+#ifndef USE_KFIFO
 	/* TODO 4: get char from buffer; update count and get_idx */
 	if (data->count == 0)
 		return false;
@@ -93,12 +102,23 @@ static bool get_char(char *c, struct kbd *data)
 	data->get_idx = (data->get_idx + 1) % BUFFER_SIZE;
 	data->count--;
 	return true;
+#else
+	if (kfifo_is_empty(&data->kfifo))
+		return false;
+
+	kfifo_out(&data->kfifo, c, 1);
+	return true;
+#endif
 }
 
 static void reset_buffer(struct kbd *data)
 {
+#ifndef USE_KFIFO
 	/* TODO 5: reset count, put_idx, get_idx */
 	memset(&data->buf, 0, BUFFER_SIZE - 1);
+#else
+	kfifo_reset(&devs[0].kfifo);
+#endif
 	data->put_idx = data->get_idx = data->count = 0;
 }
 
@@ -140,7 +160,10 @@ static int kbd_open(struct inode *inode, struct file *file)
 {
 	struct kbd *data = container_of(inode->i_cdev, struct kbd, cdev);
 
+	// since we have only one device, storing the data in file->private_data should
+	// not be mandatory? But its good practice...
 	file->private_data = data;
+
 	pr_info("%s opened\n", MODULE_NAME);
 	return 0;
 }
@@ -153,16 +176,16 @@ static int kbd_release(struct inode *inode, struct file *file)
 
 /* TODO 5: add write operation and reset the buffer */
 static ssize_t kbd_write(struct file *file, const char __user *user_buffer,
-			      size_t size, loff_t *offset)
+			 size_t size, loff_t *offset)
 {
 	struct kbd *data = (struct kbd *)file->private_data;
 	unsigned long flags;
 
 	spin_lock_irqsave(&data->lock,
-				  flags); //previous state is saved in flags
+			  flags); //previous state is saved in flags
 	reset_buffer(data);
 	spin_unlock_irqrestore(&data->lock, flags);
-	
+
 	// return the size requested from userspace, otherwise userspace cmd "echo" will hang
 	// Because echo or write systemcall retries to write until size bytes is written??
 	return size;
@@ -205,8 +228,8 @@ static const struct file_operations kbd_fops = {
 static int kbd_init(void)
 {
 	// Have a look at /proc/interrupts and /proc/ioports later
-
 	int err;
+	char *kfifo_mode;
 
 	err = register_chrdev_region(MKDEV(KBD_MAJOR, KBD_MINOR), KBD_NR_MINORS,
 				     MODULE_NAME);
@@ -237,10 +260,22 @@ static int kbd_init(void)
 		goto out_release_region;
 	}
 
+	// init kfifo
+	if (kfifo_alloc(&devs[0].kfifo, BUFFER_SIZE, GFP_KERNEL)) {
+		pr_err("kfifo_alloc() error\n");
+		goto out_release_region;
+	}
+
 	cdev_init(&devs[0].cdev, &kbd_fops);
 	cdev_add(&devs[0].cdev, MKDEV(KBD_MAJOR, KBD_MINOR), 1);
 
-	pr_notice("Driver %s loaded\n", MODULE_NAME);
+#ifdef USE_KFIFO
+	kfifo_mode = "true";
+#else
+	kfifo_mode = "false";
+#endif
+	pr_notice("Driver %s loaded\nKFIFO mode = %s\n", MODULE_NAME,
+		  kfifo_mode);
 	return 0;
 
 	/*TODO 2: release regions in case of error */
@@ -264,6 +299,7 @@ static void kbd_exit(void)
 	release_region(I8042_DATA_REG + 1, 1);
 
 	unregister_chrdev_region(MKDEV(KBD_MAJOR, KBD_MINOR), KBD_NR_MINORS);
+	kfifo_free(&devs[0].kfifo);
 	pr_notice("Driver %s unloaded\n", MODULE_NAME);
 }
 
